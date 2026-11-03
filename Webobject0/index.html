@@ -27,7 +27,7 @@ const firebaseConfig={apiKey:'AIzaSyDAtRCpF1Le_KFKw8wH10Z3-IG-yCqHiqg',authDomai
 const app=initializeApp(firebaseConfig),auth=getAuth(app),db=getDatabase(app),$=id=>document.getElementById(id);
 const WORDS={animals:'cat dog elephant giraffe zebra tiger lion penguin dolphin shark rabbit butterfly kangaroo panda koala flamingo crocodile octopus turtle monkey whale horse snake owl frog bear fox eagle squirrel hedgehog leopard cheetah hamster',food:'pizza burger sushi noodles spaghetti pancake waffle chocolate icecream cupcake popcorn sandwich taco burrito donut cheese apple banana strawberry watermelon pineapple broccoli carrot mushroom avocado cookie bread dumpling ramen curry salad soup',science:'gravity magnet volcano planet rocket telescope microscope molecule atom oxygen hydrogen electricity battery circuit skeleton heart lungs brain ecosystem photosynthesis evaporation condensation thermometer fossil galaxy asteroid orbit friction energy',pokemon:'pikachu eevee charizard bulbasaur squirtle charmander mewtwo snorlax jigglypuff psyduck gengar magikarp dragonite lapras ditto meowth lucario greninja piplup mudkip torchic rayquaza celebi onix slowpoke growlithe vulpix caterpie butterfree',mixed:'house bicycle umbrella rainbow guitar castle bridge airplane computer keyboard window mountain forest river beach camera backpack pencil scissors robot spaceship clock flower cloud treasure crown dinosaur balloon snowman train car boat kite sun moon star book phone lamp chair table shoe hat tree'};
 const gameWords=(topic)=>{const s=topic==='mixed'?Object.values(WORDS).join(' '):WORDS[topic]||WORDS.mixed;return [...new Set(s.split(/\s+/).filter(w=>w.length>=3))]};
-let disconnectHandle=null;let uid='',room='',seat=-1,host=false,unsub=null,data=null,offset=0,activeRound=0,renderSignature='',drawing=false,currentStroke=null,brushColor='#000000',brushSize=6,eraser=false,lockStart=false,turnLock=false;
+let autoAdvanceTimer=null;let autoAdvanceRound=null;let disconnectHandle=null;let uid='',room='',seat=-1,host=false,unsub=null,data=null,offset=0,activeRound=0,renderSignature='',drawing=false,currentStroke=null,brushColor='#000000',brushSize=6,eraser=false,lockStart=false,turnLock=false;
 const canvas=$('board'),ctx=canvas.getContext('2d');const colors=['#000000'];
 function status(e){$('status').textContent=(e&&e.message)||String(e)}
 function roomRef(){return ref(db,`drawGuessRooms/${room}`)}
@@ -56,7 +56,7 @@ function ui(d){data=d;if(!d)return;$('roomTag').textContent=room;$('roomCode').t
   if(activeRound!==d.round){activeRound=d.round;renderSignature='';$('guess').value=''}
  }
  if(d.status==='playing'){$('turnTitle').textContent=isDrawer(d)?'Your turn to draw!':`${d.players?.[d.drawer]?.name||'Someone'} is drawing`;$('turnInfo').textContent=isDrawer(d)?`Draw: ${d.secret}`:Number(d.settings?.duration)===0?'Guess the hidden word!':'Guess the hidden word before time runs out!';$('hint').textContent=isDrawer(d)?d.secret.toUpperCase():String(d.secret||'').replace(/[a-z]/gi,'_').split('').join(' ');$('tools').classList.toggle('hidden',!isDrawer(d));$('canvasNote').textContent=isDrawer(d)?'Draw the secret word. Do not write the answer!':'Watch the drawing and submit your guess.';$('winner').textContent='';$('next').classList.add('hidden');$('end').classList.toggle('hidden',!(host&&Number(d.settings?.duration)===0));$('replay').classList.add('hidden');$('guess').disabled=isDrawer(d)||!!d.solved?.[seat];$('send').disabled=$('guess').disabled;$('guessNote').textContent=d.solved?.[seat]?'Correct! Wait for the next round.':isDrawer(d)?'You are the artist this round.':'Only the guesser sees your guesses.';if(activeRound!==d.round){activeRound=d.round;renderSignature='';$('guess').value='';if(!$('guess').disabled)$('guess').focus()}}
- else if(d.status==='between'){$('end').classList.add('hidden');$('turnTitle').textContent='Round complete';$('turnInfo').textContent=`The word was: ${d.lastWord||'?'}`;$('hint').textContent=(d.lastWord||'').toUpperCase();$('tools').classList.add('hidden');$('next').classList.toggle('hidden',!host);$('next').disabled=!host;$('replay').classList.add('hidden');$('guess').disabled=true;$('send').disabled=true;$('guessNote').textContent='Waiting for the host to start the next round.'}
+ else if(d.status==='between'){$('end').classList.add('hidden');$('turnTitle').textContent='Round complete';$('turnInfo').textContent=`The word was: ${d.lastWord||'?'}`;$('hint').textContent=(d.lastWord||'').toUpperCase();$('tools').classList.add('hidden');$('next').classList.toggle('hidden',!host||d.autoAdvance===true);$('next').disabled=!host;$('replay').classList.add('hidden');$('guess').disabled=true;$('send').disabled=true;$('guessNote').textContent=d.autoAdvance===true?'Everyone guessed correctly! Next round starting...':'Waiting for the host to start the next round.'}
  else if(d.status==='finished'){$('end').classList.add('hidden');$('turnTitle').textContent='Game over!';$('turnInfo').textContent='Final scores';$('tools').classList.add('hidden');$('next').classList.add('hidden');$('replay').classList.toggle('hidden',!host);$('guess').disabled=true;$('send').disabled=true;const best=Math.max(...players.map(([i,p])=>p.score||0));const winners=players.filter(([i,p])=>(p.score||0)===best).map(([i,p])=>p.name);$('winner').textContent=winners.length>1?'Draw: '+winners.join(' & '):'🏆 '+winners[0]+' wins!';$('hint').textContent='';$('guessNote').textContent='Host can start a new game.'}
  renderCanvas(d);renderFeed(d);updateClock()}
 function updateClock(){if(!data||data.status!=='playing'){$('timer').textContent='0';$('timerUnit').textContent='s';return}if(Number(data.settings?.duration)===0){$('timer').textContent='∞';$('timerUnit').textContent='';return}$('timerUnit').textContent='s';const remaining=Math.max(0,Math.ceil((Number(data.endsAt)-Date.now()-offset)/1000));$('timer').textContent=remaining;if(remaining===0&&host&&!turnLock)endRound().catch(status)}
@@ -85,6 +85,23 @@ async function watch(){
     }
     host=d.host===uid;
     ui(d);
+    // Only rounds completed by everyone guessing correctly advance automatically.
+    if(host && d.status==='between' && d.autoAdvance===true){
+      if(autoAdvanceRound!==d.round){
+        clearTimeout(autoAdvanceTimer);
+        autoAdvanceRound=d.round;
+        autoAdvanceTimer=setTimeout(()=>{
+          autoAdvanceTimer=null;
+          if(data?.status==='between' && data.round===d.round && data.autoAdvance===true){
+            nextRound().catch(status);
+          }
+        },2000);
+      }
+    }else{
+      clearTimeout(autoAdvanceTimer);
+      autoAdvanceTimer=null;
+      autoAdvanceRound=null;
+    }
   },status);
 }
 async function leaveRoom(){
@@ -177,11 +194,19 @@ async function chooseWord(word){
   },{applyLocally:false});
  }catch(e){status(e)}
 }
-async function start(){if(lockStart)return;lockStart=true;$('start').disabled=true;try{const result=await runTransaction(roomRef(),d=>{if(!d||d.host!==uid||!['waiting','finished'].includes(d.status)||validPlayers(d).length<2)return;d.status='choosing';d.round=1;d.drawer=Number(validPlayers(d)[0][0]);d.secret=null;d.wordChoices=makeChoices(d);d.usedWords={};d.endsAt=0;d.strokes=null;d.messages=null;d.solved=null;d.lastWord=null;for(const [i,p] of validPlayers(d))p.score=0;return d},{applyLocally:false});if(!result.committed)throw Error('Could not start game.')}catch(e){status(e)}finally{lockStart=false}}
-async function endRound(force=false){if(!host||turnLock||data?.status!=='playing')return;turnLock=true;try{await runTransaction(roomRef(),d=>{if(!d||d.status!=='playing'||(Number(d.settings?.duration)===0?!force:Date.now()<d.endsAt-500))return;d.lastWord=d.secret;d.secret=null;d.status=d.round>=roundCount(d)?'finished':'between';return d},{applyLocally:false})}finally{turnLock=false}}
-async function nextRound(){if(!host)return;try{await runTransaction(roomRef(),d=>{if(!d||d.host!==uid||d.status!=='between')return;const players=validPlayers(d);d.round++;d.drawer=Number(players[(d.round-1)%players.length][0]);d.secret=null;d.wordChoices=makeChoices(d);d.endsAt=0;d.status='choosing';d.strokes=null;d.messages=null;d.solved=null;return d},{applyLocally:false})}catch(e){status(e)}}
+async function start(){if(lockStart)return;lockStart=true;$('start').disabled=true;try{const result=await runTransaction(roomRef(),d=>{if(!d||d.host!==uid||!['waiting','finished'].includes(d.status)||validPlayers(d).length<2)return;d.status='choosing';d.round=1;d.drawer=Number(validPlayers(d)[0][0]);d.secret=null;d.wordChoices=makeChoices(d);d.usedWords={};d.endsAt=0;d.strokes=null;d.messages=null;d.solved=null;d.lastWord=null;d.autoAdvance=false;for(const [i,p] of validPlayers(d))p.score=0;return d},{applyLocally:false});if(!result.committed)throw Error('Could not start game.')}catch(e){status(e)}finally{lockStart=false}}
+async function endRound(force=false){if(!host||turnLock||data?.status!=='playing')return;turnLock=true;try{await runTransaction(roomRef(),d=>{if(!d||d.status!=='playing'||(Number(d.settings?.duration)===0?!force:Date.now()<d.endsAt-500))return;d.lastWord=d.secret;d.secret=null;d.autoAdvance=false;d.status=d.round>=roundCount(d)?'finished':'between';return d},{applyLocally:false})}finally{turnLock=false}}
+async function nextRound(){if(!host)return;try{await runTransaction(roomRef(),d=>{if(!d||d.host!==uid||d.status!=='between')return;const players=validPlayers(d);d.round++;d.drawer=Number(players[(d.round-1)%players.length][0]);d.secret=null;d.wordChoices=makeChoices(d);d.endsAt=0;d.status='choosing';d.autoAdvance=false;d.strokes=null;d.messages=null;d.solved=null;return d},{applyLocally:false})}catch(e){status(e)}}
 function normalize(s){return String(s).toLowerCase().replace(/[^a-z0-9]/g,'')}
-$('guessForm').addEventListener('submit',async e=>{e.preventDefault();const raw=$('guess').value.trim().slice(0,50);if(!raw||!data||data.status!=='playing'||isDrawer(data)||data.solved?.[seat])return;$('guess').value='';try{const word=normalize(data.secret);const correct=normalize(raw)===word;const msgRef=push(ref(db,`drawGuessRooms/${room}/messages`));if(correct){const result=await runTransaction(roomRef(),d=>{if(!d||d.status!=='playing'||d.solved?.[seat]||Number(d.drawer)===seat||normalize(d.secret)!==normalize(raw))return;d.solved=d.solved||{};d.solved[seat]=true;const seconds=Number(d.settings?.duration)===0?50:Math.max(0,Math.ceil((d.endsAt-Date.now())/1000));const points=50+seconds;d.players[seat].score=(d.players[seat].score||0)+points;d.players[d.drawer].score=(d.players[d.drawer].score||0)+25;d.messages=d.messages||{};d.messages[msgRef.key]={name:d.players[seat].name,kind:'correct',at:Date.now(),text:'Correct!'};return d},{applyLocally:false});if(!result.committed)return}else{await set(msgRef,{name:data.players[seat].name,kind:'guess',text:raw,at:Date.now()})}}catch(err){status(err)}});
+$('guessForm').addEventListener('submit',async e=>{e.preventDefault();const raw=$('guess').value.trim().slice(0,50);if(!raw||!data||data.status!=='playing'||isDrawer(data)||data.solved?.[seat])return;$('guess').value='';try{const word=normalize(data.secret);const correct=normalize(raw)===word;const msgRef=push(ref(db,`drawGuessRooms/${room}/messages`));if(correct){const result=await runTransaction(roomRef(),d=>{if(!d||d.status!=='playing'||d.solved?.[seat]||Number(d.drawer)===seat||normalize(d.secret)!==normalize(raw))return;d.solved=d.solved||{};d.solved[seat]=true;const seconds=Number(d.settings?.duration)===0?50:Math.max(0,Math.ceil((d.endsAt-Date.now())/1000));const points=50+seconds;d.players[seat].score=(d.players[seat].score||0)+points;d.players[d.drawer].score=(d.players[d.drawer].score||0)+25;d.messages=d.messages||{};d.messages[msgRef.key]={name:d.players[seat].name,kind:'correct',at:Date.now(),text:'Correct!'};
+        const guessers=validPlayers(d).filter(([i])=>Number(i)!==Number(d.drawer));
+        if(guessers.length>0 && guessers.every(([i])=>d.solved?.[i]===true)){
+          d.lastWord=d.secret;
+          d.secret=null;
+          d.autoAdvance=true;
+          d.status=d.round>=roundCount(d)?'finished':'between';
+        }
+        return d},{applyLocally:false});if(!result.committed)return}else{await set(msgRef,{name:data.players[seat].name,kind:'guess',text:raw,at:Date.now()})}}catch(err){status(err)}});
 $('create').onclick=create;$('join').onclick=join;$('start').onclick=start;$('next').onclick=nextRound;$('end').onclick=()=>endRound(true).catch(status);$('replay').onclick=start;$('leave').onclick=leaveRoom;
 blank();onValue(ref(db,'.info/serverTimeOffset'),s=>offset=Number(s.val())||0);setInterval(updateClock,250);
 try{const cred=await signInAnonymously(auth);uid=cred.user.uid;$('status').textContent=''}catch(e){status(e);$('create').disabled=true;$('join').disabled=true}
