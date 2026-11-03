@@ -16,18 +16,18 @@ input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid 
 .swatch.selected{outline:3px solid #111}
 .playerrow{border-bottom-color:#ddd}
 .feed{background:#f4f4f4}
-</style></head><body><main class="app"><header class="top"><h1>Draw & Guess Party</h1><div class="pill">Room <b id="roomTag">—</b> · Round <b id="roundTag">—</b> · <b id="timer">0</b><span id="timerUnit">s</span></div></header>
+</style></head><body><main class="app"><header class="top"><h1>huahua</h1><div class="pill">Room <b id="roomTag">—</b> · Round <b id="roundTag">—</b> · <b id="timer">0</b><span id="timerUnit">s</span></div></header>
 <section class="panel lobby" id="lobby"><h2 id="lobbyTitle">Play with 2–4 friends</h2><p class="muted">Create a room or join with a 6-character code. One person draws while the others guess.</p><div class="actions" id="joinActions"><input id="nickname" maxlength="18" placeholder="Your name" aria-label="Your name"><button id="create">Create Room</button><input id="code" maxlength="6" placeholder="ROOM CODE" aria-label="Room code"><button id="join">Join Room</button></div><div id="roomDetails" class="hidden"><p>Share this room code:</p><div class="roomcode" id="roomCode"></div><p id="waitingPlayers" class="muted"></p><div class="settings"><label>Topic<select id="topic"><option value="mixed">Random</option><option value="animals">Animals</option><option value="food">Food</option><option value="science">Science</option><option value="pokemon">Pokémon</option></select></label><label>Round duration<select id="duration"><option value="45">45 seconds</option><option value="60" selected>60 seconds</option><option value="90">90 seconds</option><option value="0">Unlimited</option></select></label><label>Rounds per player<select id="rounds"><option value="1">1</option><option value="2" selected>2</option><option value="3">3</option></select></label></div><p class="note" id="hostNote"></p><button id="start">Start Game</button></div><div id="status" class="status" role="status"></div></section>
 <section id="gameScreen" class="layout hidden"><div class="panel game"><div class="boardhead"><div><h2 id="turnTitle">Waiting...</h2><p class="muted" id="turnInfo"></p></div><div class="hint" id="hint">_ _ _</div></div><div id="wordChoices" class="panel hidden" style="margin:8px 0"><h3 style="margin-bottom:10px">Choose one word to draw</h3><div id="wordChoiceButtons" class="actions"></div></div><div class="canvaswrap"><canvas id="board" width="800" height="600" aria-label="Shared drawing canvas"></canvas></div><div id="tools" class="tools hidden"><span>Brush:</span><div id="colors" class="tools"></div><label>Size <input id="brush" type="range" min="2" max="30" value="6"></label><button id="eraser">Eraser</button><button id="undo">Undo</button><button id="clear">Clear</button></div><p class="note" id="canvasNote">Watch the artist draw and type your guess.</p><div class="actions"><button id="end" class="hidden">End Round</button><button id="next" class="hidden">Next Round</button><button id="replay" class="hidden">Play Again</button><button id="leave">Leave Room</button></div><p class="winner" id="winner"></p></div><aside class="side"><div class="panel"><h3>Players & Scores</h3><div id="scoreboard"></div></div><div class="panel"><h3>Guesses</h3><div id="feed" class="feed" aria-live="polite"></div><form id="guessForm" class="guessrow"><input id="guess" maxlength="50" placeholder="Type your guess..." autocomplete="off" spellcheck="false"><button id="send" type="submit">Send</button></form><p class="note" id="guessNote"></p></div></aside></section></main>
 <script type="module">
 import {initializeApp} from 'https://www.gstatic.com/firebasejs/12.4.0/firebase-app.js';
 import {getAuth,signInAnonymously,onAuthStateChanged} from 'https://www.gstatic.com/firebasejs/12.4.0/firebase-auth.js';
-import {getDatabase,ref,get,set,update,onValue,runTransaction,push,serverTimestamp} from 'https://www.gstatic.com/firebasejs/12.4.0/firebase-database.js';
+import {getDatabase,ref,get,set,update,onValue,runTransaction,push,serverTimestamp,onDisconnect} from 'https://www.gstatic.com/firebasejs/12.4.0/firebase-database.js';
 const firebaseConfig={apiKey:'AIzaSyDAtRCpF1Le_KFKw8wH10Z3-IG-yCqHiqg',authDomain:'monochrome-58a1f.firebaseapp.com',databaseURL:'https://monochrome-58a1f-default-rtdb.asia-southeast1.firebasedatabase.app',projectId:'monochrome-58a1f',storageBucket:'monochrome-58a1f.firebasestorage.app',messagingSenderId:'872886926657',appId:'1:872886926657:web:82605257fa358a3bd0f5c0',measurementId:'G-GGMGBWEWLP'};
 const app=initializeApp(firebaseConfig),auth=getAuth(app),db=getDatabase(app),$=id=>document.getElementById(id);
 const WORDS={animals:'cat dog elephant giraffe zebra tiger lion penguin dolphin shark rabbit butterfly kangaroo panda koala flamingo crocodile octopus turtle monkey whale horse snake owl frog bear fox eagle squirrel hedgehog leopard cheetah hamster',food:'pizza burger sushi noodles spaghetti pancake waffle chocolate icecream cupcake popcorn sandwich taco burrito donut cheese apple banana strawberry watermelon pineapple broccoli carrot mushroom avocado cookie bread dumpling ramen curry salad soup',science:'gravity magnet volcano planet rocket telescope microscope molecule atom oxygen hydrogen electricity battery circuit skeleton heart lungs brain ecosystem photosynthesis evaporation condensation thermometer fossil galaxy asteroid orbit friction energy',pokemon:'pikachu eevee charizard bulbasaur squirtle charmander mewtwo snorlax jigglypuff psyduck gengar magikarp dragonite lapras ditto meowth lucario greninja piplup mudkip torchic rayquaza celebi onix slowpoke growlithe vulpix caterpie butterfree',mixed:'house bicycle umbrella rainbow guitar castle bridge airplane computer keyboard window mountain forest river beach camera backpack pencil scissors robot spaceship clock flower cloud treasure crown dinosaur balloon snowman train car boat kite sun moon star book phone lamp chair table shoe hat tree'};
 const gameWords=(topic)=>{const s=topic==='mixed'?Object.values(WORDS).join(' '):WORDS[topic]||WORDS.mixed;return [...new Set(s.split(/\s+/).filter(w=>w.length>=3))]};
-let uid='',room='',seat=-1,host=false,unsub=null,data=null,offset=0,activeRound=0,renderSignature='',drawing=false,currentStroke=null,brushColor='#000000',brushSize=6,eraser=false,lockStart=false,turnLock=false;
+let disconnectHandle=null;let uid='',room='',seat=-1,host=false,unsub=null,data=null,offset=0,activeRound=0,renderSignature='',drawing=false,currentStroke=null,brushColor='#000000',brushSize=6,eraser=false,lockStart=false,turnLock=false;
 const canvas=$('board'),ctx=canvas.getContext('2d');const colors=['#000000'];
 function status(e){$('status').textContent=(e&&e.message)||String(e)}
 function roomRef(){return ref(db,`drawGuessRooms/${room}`)}
@@ -39,7 +39,7 @@ function secret(d){return d?.status==='playing'&&isDrawer(d)?(d.secret||''):''}
 function roundCount(d){return validPlayers(d).length*Number(d?.settings?.rounds||2)}
 function hideGuessWord(text,word){return String(text).replace(new RegExp(word.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'gi'),'••••')}
 function ui(d){data=d;if(!d)return;$('roomTag').textContent=room;$('roomCode').textContent=room;$('joinActions').classList.add('hidden');$('roomDetails').classList.remove('hidden');const players=validPlayers(d);$('waitingPlayers').textContent=players.map(([i,p])=>p.name+(Number(i)===seat?' (you)':'')).join(' · ')+` (${players.length}/4)`;
- const waiting=d.status==='waiting';$('lobby').classList.toggle('hidden',!waiting);$('gameScreen').classList.toggle('hidden',waiting);$('topic').value=d.settings?.topic||'mixed';$('duration').value=String(d.settings?.duration||60);$('rounds').value=String(d.settings?.rounds||2);for(const id of ['topic','duration','rounds'])$(id).disabled=!host||!waiting;$('hostNote').textContent=host?'Only the host can change settings.':'Waiting for the host to start the game.';$('start').classList.toggle('hidden',!host);$('start').disabled=!host||players.length<2||lockStart;
+ const waiting=d.status==='waiting';$('lobby').classList.toggle('hidden',!waiting);$('gameScreen').classList.toggle('hidden',waiting);$('topic').value=d.settings?.topic||'mixed';$('duration').value=String(d.settings?.duration??60);$('rounds').value=String(d.settings?.rounds||2);for(const id of ['topic','duration','rounds'])$(id).disabled=!host||!waiting;$('hostNote').textContent=host?'Only the host can change settings.':'Waiting for the host to start the game.';$('start').classList.toggle('hidden',!host);$('start').disabled=!host||players.length<2||lockStart;
  $('roundTag').textContent=d.round?`${d.round}/${roundCount(d)}`:'—';$('scoreboard').replaceChildren();for(const [i,p] of players){const r=document.createElement('div');r.className='playerrow';const a=document.createElement('span');a.textContent=(Number(i)===d.drawer?'🎨 ':'')+p.name+(Number(i)===seat?' (You)':'')+(d.solved?.[i]?' ✓':'');const b=document.createElement('b');b.textContent=(p.score||0)+' pts';r.append(a,b);$('scoreboard').append(r)}
  const choosing=d.status==='choosing';
  $('wordChoices').classList.toggle('hidden',!(choosing&&Number(d.drawer)===seat));
@@ -72,7 +72,37 @@ function finishStroke(){if(!drawing)return;sendStroke();drawing=false;currentStr
 for(const color of colors){const b=document.createElement('button');b.className='swatch';b.style.background=color;b.title=color;b.type='button';b.onclick=()=>{brushColor=color;eraser=false;setSwatches()};b.dataset.color=color;$('colors').appendChild(b)}function setSwatches(){document.querySelectorAll('.swatch').forEach(b=>b.classList.toggle('selected',!eraser&&b.dataset.color===brushColor))}setSwatches();$('brush').oninput=()=>brushSize=Number($('brush').value);$('eraser').onclick=()=>{eraser=!eraser;setSwatches();$('eraser').textContent=eraser?'Eraser ✓':'Eraser'};
 $('clear').onclick=async()=>{if(!isDrawer(data))return;await set(ref(db,`drawGuessRooms/${room}/strokes`),null)};
 $('undo').onclick=async()=>{if(!isDrawer(data))return;const keys=Object.keys(data.strokes||{}).sort();if(keys.length)await set(ref(db,`drawGuessRooms/${room}/strokes/${keys[keys.length-1]}`),null)};
-async function watch(){if(unsub)unsub();unsub=onValue(roomRef(),snap=>{if(!snap.exists()){status('Room no longer exists.');return}ui(snap.val())},status)}
+async function watch(){
+ if(unsub)unsub();
+ if(disconnectHandle)await disconnectHandle.cancel().catch(()=>{});
+ disconnectHandle=onDisconnect(ref(db,`drawGuessRooms/${room}/players/${seat}`));
+ await disconnectHandle.remove().catch(status);
+ unsub=onValue(roomRef(),snap=>{
+  if(!snap.exists()){status('Room no longer exists.');return}
+  host=snap.val().host===uid;
+  ui(snap.val());
+ },status);
+}
+async function leaveRoom(){
+ try{
+  $('leave').disabled=true;
+  if(room&&seat>=0){
+   await runTransaction(roomRef(),d=>{
+    if(!d)return;
+    if(d.players?.[seat]?.uid!==uid)return;
+    delete d.players[seat];
+    if(d.host===uid){
+     const remaining=validPlayers(d);
+     if(remaining.length)d.host=remaining[0][1].uid;
+     else return null;
+    }
+    return d;
+   },{applyLocally:false});
+  }
+  if(disconnectHandle)await disconnectHandle.cancel().catch(()=>{});
+  location.reload();
+ }catch(e){status(e);$('leave').disabled=false}
+}
 async function create(){try{if(!uid)throw Error('Still signing in. Try again.');$('status').textContent='Creating room...';for(let i=0;i<8;i++){const c=makeCode();const result=await runTransaction(ref(db,`drawGuessRooms/${c}`),cur=>cur===null?{host:uid,status:'waiting',round:0,settings:{topic:'mixed',duration:60,rounds:2},players:{0:{uid,name:playerName(),score:0}},createdAt:Date.now()}:undefined,{applyLocally:false});if(result.committed){room=c;seat=0;host=true;$('status').textContent='';watch();return}}throw Error('Unable to create a room.')}catch(e){status(e)}}
 
 async function join() {
@@ -188,7 +218,7 @@ async function endRound(force=false){if(!host||turnLock||data?.status!=='playing
 async function nextRound(){if(!host)return;try{await runTransaction(roomRef(),d=>{if(!d||d.host!==uid||d.status!=='between')return;const players=validPlayers(d);d.round++;d.drawer=Number(players[(d.round-1)%players.length][0]);d.secret=null;d.wordChoices=makeChoices(d);d.endsAt=0;d.status='choosing';d.strokes=null;d.messages=null;d.solved=null;return d},{applyLocally:false})}catch(e){status(e)}}
 function normalize(s){return String(s).toLowerCase().replace(/[^a-z0-9]/g,'')}
 $('guessForm').addEventListener('submit',async e=>{e.preventDefault();const raw=$('guess').value.trim().slice(0,50);if(!raw||!data||data.status!=='playing'||isDrawer(data)||data.solved?.[seat])return;$('guess').value='';try{const word=normalize(data.secret);const correct=normalize(raw)===word;const msgRef=push(ref(db,`drawGuessRooms/${room}/messages`));if(correct){const result=await runTransaction(roomRef(),d=>{if(!d||d.status!=='playing'||d.solved?.[seat]||Number(d.drawer)===seat||normalize(d.secret)!==normalize(raw))return;d.solved=d.solved||{};d.solved[seat]=true;const seconds=Number(d.settings?.duration)===0?50:Math.max(0,Math.ceil((d.endsAt-Date.now())/1000));const points=50+seconds;d.players[seat].score=(d.players[seat].score||0)+points;d.players[d.drawer].score=(d.players[d.drawer].score||0)+25;d.messages=d.messages||{};d.messages[msgRef.key]={name:d.players[seat].name,kind:'correct',at:Date.now(),text:'Correct!'};return d},{applyLocally:false});if(!result.committed)return}else{await set(msgRef,{name:data.players[seat].name,kind:'guess',text:raw,at:Date.now()})}}catch(err){status(err)}});
-$('create').onclick=create;$('join').onclick=join;$('start').onclick=start;$('next').onclick=nextRound;$('end').onclick=()=>endRound(true).catch(status);$('replay').onclick=start;$('leave').onclick=()=>location.reload();
+$('create').onclick=create;$('join').onclick=join;$('start').onclick=start;$('next').onclick=nextRound;$('end').onclick=()=>endRound(true).catch(status);$('replay').onclick=start;$('leave').onclick=leaveRoom;
 blank();onValue(ref(db,'.info/serverTimeOffset'),s=>offset=Number(s.val())||0);setInterval(updateClock,250);
 try{const cred=await signInAnonymously(auth);uid=cred.user.uid;$('status').textContent=''}catch(e){status(e);$('create').disabled=true;$('join').disabled=true}
 </script></body></html>
