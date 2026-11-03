@@ -129,9 +129,10 @@ async function join() {
     const result = await runTransaction(
       r,
       d => {
-        if (!d || d.status !== "waiting") {
-          return;
-        }
+        // Firebase may initially call the transaction with an empty local cache.
+        // Returning undefined at that point aborts an otherwise valid join.
+        if (d === null) return d;
+        if (d.status !== "waiting") return;
 
         d.players = d.players || {};
 
@@ -163,7 +164,7 @@ async function join() {
     );
 
     if (!result.committed) {
-      throw Error("Room is full or already started.");
+      throw Error("Unable to join. Check the room code, room status and available slots.");
     }
 
     const updatedRoom = result.snapshot.val();
