@@ -73,15 +73,19 @@ for(const color of colors){const b=document.createElement('button');b.className=
 $('clear').onclick=async()=>{if(!isDrawer(data))return;await set(ref(db,`drawGuessRooms/${room}/strokes`),null)};
 $('undo').onclick=async()=>{if(!isDrawer(data))return;const keys=Object.keys(data.strokes||{}).sort();if(keys.length)await set(ref(db,`drawGuessRooms/${room}/strokes/${keys[keys.length-1]}`),null)};
 async function watch(){
- if(unsub)unsub();
- if(disconnectHandle)await disconnectHandle.cancel().catch(()=>{});
- disconnectHandle=onDisconnect(ref(db,`drawGuessRooms/${room}/players/${seat}`));
- await disconnectHandle.remove().catch(status);
- unsub=onValue(roomRef(),snap=>{
-  if(!snap.exists()){status('Room no longer exists.');return}
-  host=snap.val().host===uid;
-  ui(snap.val());
- },status);
+  if(unsub)unsub();
+  // Do not register an automatic slot deletion: multiple tabs may share an
+  // anonymous Firebase UID, and one tab closing can remove another's slot.
+  unsub=onValue(roomRef(),snap=>{
+    if(!snap.exists()){status('Room no longer exists.');return}
+    const d=snap.val();
+    if(d.players?.[seat]?.uid!==uid){
+      status('Your player slot is no longer in this room. Rejoin using a new browser session.');
+      return;
+    }
+    host=d.host===uid;
+    ui(d);
+  },status);
 }
 async function leaveRoom(){
  try{
@@ -99,94 +103,53 @@ async function leaveRoom(){
     return d;
    },{applyLocally:false});
   }
-  if(disconnectHandle)await disconnectHandle.cancel().catch(()=>{});
   location.reload();
  }catch(e){status(e);$('leave').disabled=false}
 }
 async function create(){try{if(!uid)throw Error('Still signing in. Try again.');$('status').textContent='Creating room...';for(let i=0;i<8;i++){const c=makeCode();const result=await runTransaction(ref(db,`drawGuessRooms/${c}`),cur=>cur===null?{host:uid,status:'waiting',round:0,settings:{topic:'mixed',duration:60,rounds:2},players:{0:{uid,name:playerName(),score:0}},createdAt:Date.now()}:undefined,{applyLocally:false});if(result.committed){room=c;seat=0;host=true;$('status').textContent='';watch();return}}throw Error('Unable to create a room.')}catch(e){status(e)}}
 
-async function join() {
-  try {
-    if (!uid) {
-      throw Error("Still signing in. Try again.");
+async function join(){
+  try{
+    if(!uid)throw Error('Still signing in. Try again.');
+    const c=$('code').value.trim().toUpperCase();
+    if(!/^[A-HJ-NP-Z2-9]{6}$/.test(c))throw Error('Enter a valid 6-character room code.');
+    $('status').textContent='Joining room...';
+    const r=ref(db,`drawGuessRooms/${c}`);
+    const snap=await get(r);
+    if(!snap.exists())throw Error('Room not found.');
+    const initial=snap.val();
+    if(initial.status!=='waiting')throw Error('This game has already started.');
+
+    // Same anonymous identity must not occupy two player slots.
+    const existing=Object.entries(initial.players||{}).find(([i,p])=>p?.uid===uid);
+    if(existing){
+      room=c;seat=Number(existing[0]);host=initial.host===uid;
+      $('status').textContent='';await watch();return;
     }
 
-    const c = $("code").value.trim().toUpperCase();
-
-    if (!/^[A-HJ-NP-Z2-9]{6}$/.test(c)) {
-      throw Error("Enter a valid 6-character room code.");
+    // Claim one individual player slot atomically, without replacing the
+    // whole room object. Each slot transaction may safely start at null.
+    let joined=-1;
+    for(let i=0;i<4;i++){
+      const slotRef=ref(db,`drawGuessRooms/${c}/players/${i}`);
+      const result=await runTransaction(slotRef,current=>{
+        if(current!==null)return; // occupied
+        return {uid,name:playerName(),score:0};
+      },{applyLocally:false});
+      if(result.committed){joined=i;break;}
     }
+    if(joined<0)throw Error('Room is full (4 players).');
 
-    $("status").textContent = "Joining room...";
-
-    const r = ref(db, `drawGuessRooms/${c}`);
-    const check = await get(r);
-
-    if (!check.exists()) {
-      throw Error("Room not found.");
+    // Check the room has not started while we were joining.
+    const latest=(await get(r)).val();
+    if(!latest||latest.status!=='waiting'){
+      await runTransaction(ref(db,`drawGuessRooms/${c}/players/${joined}`),
+        p=>p?.uid===uid?null:undefined,{applyLocally:false});
+      throw Error('This game has already started.');
     }
-
-    const result = await runTransaction(
-      r,
-      d => {
-        // Firebase may initially call the transaction with an empty local cache.
-        // Returning undefined at that point aborts an otherwise valid join.
-        if (d === null) return d;
-        if (d.status !== "waiting") return;
-
-        d.players = d.players || {};
-
-        // Check if player has already joined
-        const existing = Object.entries(d.players)
-          .find(([i, p]) => p && p.uid === uid);
-
-        if (existing) {
-          return d;
-        }
-
-        // Slots 0, 1, 2, 3 = 4 players
-        for (let i = 0; i < 4; i++) {
-          if (!d.players[i]) {
-            d.players[i] = {
-              uid: uid,
-              name: playerName(),
-              score: 0
-            };
-
-            return d;
-          }
-        }
-
-        // All 4 slots occupied
-        return;
-      },
-      { applyLocally: false }
-    );
-
-    if (!result.committed) {
-      throw Error("Unable to join. Check the room code, room status and available slots.");
-    }
-
-    const updatedRoom = result.snapshot.val();
-
-    const myEntry = Object.entries(updatedRoom.players || {})
-      .find(([i, p]) => p && p.uid === uid);
-
-    if (!myEntry) {
-      throw Error("Unable to find your player slot.");
-    }
-
-    room = c;
-    seat = Number(myEntry[0]);
-    host = updatedRoom.host === uid;
-
-    $("status").textContent = "";
-
-    watch();
-
-  } catch (e) {
-    status(e);
-  }
+    room=c;seat=joined;host=latest.host===uid;
+    $('status').textContent='';await watch();
+  }catch(e){status(e)}
 }
 
 async function saveSettings(){if(!host||!room||data?.status!=='waiting')return;await update(ref(db,`drawGuessRooms/${room}/settings`),{topic:$('topic').value,duration:Number($('duration').value),rounds:Number($('rounds').value)}).catch(status)}for(const id of ['topic','duration','rounds'])$(id).addEventListener('change',saveSettings);
