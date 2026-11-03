@@ -1,0 +1,1215 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monochrome Hua²</title>
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: #f2f2f2;
+  color: #111;
+  font-family: Arial, sans-serif;
+}
+
+button, input, select { font: inherit; }
+
+button {
+  background: #111;
+  color: white;
+  border: 1px solid #111;
+  border-radius: 9px;
+  padding: 11px 16px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+button:hover:not(:disabled) { background: #333; }
+button:disabled { opacity: .4; cursor: default; }
+
+input, select {
+  padding: 11px;
+  border: 1px solid #888;
+  border-radius: 8px;
+  min-width: 0;
+  background: white;
+  color: black;
+}
+
+h1, h2, h3, p { margin: 0; }
+
+.app {
+  max-width: 1400px;
+  margin: auto;
+  padding: 20px;
+  display: grid;
+  gap: 16px;
+}
+
+.top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.pill, .panel {
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 15px;
+  padding: 18px;
+}
+
+.lobby {
+  width: 100%;
+  max-width: 680px;
+  margin: 6vh auto;
+  display: grid;
+  gap: 18px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.hidden { display: none !important; }
+.muted, .note { color: #555; }
+.note { font-size: 13px; }
+.status { min-height: 22px; }
+
+.roomcode {
+  font-size: 38px;
+  font-weight: 900;
+  letter-spacing: 6px;
+}
+
+.settings {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.settings label {
+  display: grid;
+  gap: 6px;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 15px;
+}
+
+.game {
+  display: grid;
+  gap: 12px;
+}
+
+.boardhead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.canvaswrap {
+  background: white;
+  border: 2px solid #555;
+  border-radius: 12px;
+  overflow: hidden;
+  touch-action: none;
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 3;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.tools label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.swatch {
+  width: 32px;
+  height: 32px;
+  border: 2px solid #555;
+  border-radius: 50%;
+  padding: 0;
+}
+
+.swatch.selected {
+  outline: 3px solid black;
+  outline-offset: 2px;
+}
+
+.side {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.playerrow {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid #ddd;
+}
+
+.feed {
+  height: 260px;
+  overflow-y: auto;
+  background: #f4f4f4;
+  border-radius: 10px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.message {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.message.correct { font-weight: bold; }
+
+.guessrow {
+  display: flex;
+  gap: 8px;
+}
+
+.guessrow input {
+  flex: 1;
+  width: 100%;
+}
+
+.hint {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 3px;
+}
+
+.winner {
+  font-size: 22px;
+  font-weight: bold;
+}
+
+@media (max-width: 850px) {
+  .layout { grid-template-columns: 1fr; }
+  .side { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 570px) {
+  .side, .settings { grid-template-columns: 1fr; }
+  .app { padding: 10px; }
+}
+</style>
+</head>
+
+<body>
+<main class="app">
+
+<header class="top">
+  <h1>DRAW & GUESS PARTY</h1>
+  <div class="pill">
+    Room <b id="roomTag">—</b> ·
+    Round <b id="roundTag">—</b> ·
+    <b id="timer">0</b>s
+  </div>
+</header>
+
+<section class="panel lobby" id="lobby">
+  <h2>Play with 2–4 Players</h2>
+  <p class="muted">
+    Create a room or join with a code.
+    One player draws while the others guess.
+  </p>
+
+  <div class="actions" id="joinActions">
+    <input id="nickname" maxlength="18"
+      placeholder="Your name">
+
+    <button id="create">Create Room</button>
+
+    <input id="code" maxlength="6"
+      placeholder="ROOM CODE">
+
+    <button id="join">Join Room</button>
+  </div>
+
+  <div id="roomDetails" class="hidden">
+    <p>Share this room code:</p>
+    <div class="roomcode" id="roomCode"></div>
+    <p id="waitingPlayers"></p>
+
+    <div class="settings">
+      <label>
+        Topic
+        <select id="topic">
+          <option value="mixed">Random</option>
+          <option value="animals">Animals</option>
+          <option value="food">Food</option>
+          <option value="science">Science</option>
+          <option value="pokemon">Pokémon</option>
+        </select>
+      </label>
+
+      <label>
+        Round Duration
+        <select id="duration">
+          <option value="45">45 seconds</option>
+          <option value="60" selected>60 seconds</option>
+          <option value="90">90 seconds</option>
+        </select>
+      </label>
+
+      <label>
+        Rounds per Player
+        <select id="rounds">
+          <option value="1">1</option>
+          <option value="2" selected>2</option>
+          <option value="3">3</option>
+        </select>
+      </label>
+    </div>
+
+    <p class="note" id="hostNote"></p>
+    <button id="start">Start Game</button>
+  </div>
+
+  <div id="status" class="status"></div>
+</section>
+
+<section id="gameScreen" class="layout hidden">
+
+  <div class="panel game">
+    <div class="boardhead">
+      <div>
+        <h2 id="turnTitle">Waiting...</h2>
+        <p id="turnInfo"></p>
+      </div>
+      <div class="hint" id="hint">_ _ _</div>
+    </div>
+
+    <div class="canvaswrap">
+      <canvas id="board" width="800" height="600"></canvas>
+    </div>
+
+    <div id="tools" class="tools hidden">
+      <span>Brush:</span>
+      <div id="colors" class="tools"></div>
+
+      <label>
+        Size
+        <input id="brush" type="range"
+          min="2" max="30" value="6">
+      </label>
+
+      <button id="eraser">Eraser</button>
+      <button id="undo">Undo</button>
+      <button id="clear">Clear</button>
+    </div>
+
+    <p class="note" id="canvasNote"></p>
+
+    <div class="actions">
+      <button id="next" class="hidden">Next Round</button>
+      <button id="replay" class="hidden">Play Again</button>
+      <button id="leave">Leave Room</button>
+    </div>
+
+    <p class="winner" id="winner"></p>
+  </div>
+
+  <aside class="side">
+    <div class="panel">
+      <h3>Players & Scores</h3>
+      <div id="scoreboard"></div>
+    </div>
+
+    <div class="panel">
+      <h3>Guesses</h3>
+      <div id="feed" class="feed"></div>
+
+      <form id="guessForm" class="guessrow">
+        <input id="guess"
+          maxlength="50"
+          placeholder="Type your guess..."
+          autocomplete="off"
+          spellcheck="false">
+        <button id="send" type="submit">Send</button>
+      </form>
+
+      <p class="note" id="guessNote"></p>
+    </div>
+  </aside>
+
+</section>
+</main>
+
+<script type="module">
+
+import { initializeApp }
+from "https://www.gstatic.com/firebasejs/12.4.0/firebase-app.js";
+
+import { getAuth, signInAnonymously }
+from "https://www.gstatic.com/firebasejs/12.4.0/firebase-auth.js";
+
+import {
+  getDatabase, ref, get, set, update,
+  onValue, runTransaction, push
+} from "https://www.gstatic.com/firebasejs/12.4.0/firebase-database.js";
+
+// FIREBASE
+
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDAtRCpF1Le_KFKw8wH10Z3-IG-yCqHiqg",
+  authDomain: "monochrome-58a1f.firebaseapp.com",
+  databaseURL: "https://monochrome-58a1f-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "monochrome-58a1f",
+  storageBucket: "monochrome-58a1f.firebasestorage.app",
+  messagingSenderId: "872886926657",
+  appId: "1:872886926657:web:82605257fa358a3bd0f5c0",
+  measurementId: "G-GGMGBWEWLP"
+};
+
+
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getDatabase(app);
+const $ = id => document.getElementById(id);
+
+// WORD LISTS
+const WORDS = {
+  animals:
+    "cat dog elephant giraffe zebra tiger lion penguin " +
+    "dolphin shark rabbit butterfly kangaroo panda koala " +
+    "flamingo crocodile octopus turtle monkey whale horse " +
+    "snake owl frog bear fox eagle squirrel hedgehog leopard",
+
+  food:
+    "pizza burger sushi noodles spaghetti pancake waffle " +
+    "chocolate icecream cupcake popcorn sandwich taco burrito " +
+    "donut cheese apple banana strawberry watermelon pineapple " +
+    "broccoli carrot mushroom avocado cookie bread dumpling ramen",
+
+  science:
+    "gravity magnet volcano planet rocket telescope microscope " +
+    "molecule atom oxygen hydrogen electricity battery circuit " +
+    "skeleton heart lungs brain ecosystem photosynthesis " +
+    "evaporation condensation thermometer fossil galaxy asteroid " +
+    "orbit friction energy",
+
+  pokemon:
+    "pikachu eevee charizard bulbasaur squirtle charmander " +
+    "mewtwo snorlax jigglypuff psyduck gengar magikarp " +
+    "dragonite lapras ditto meowth lucario greninja piplup " +
+    "mudkip torchic rayquaza celebi onix slowpoke growlithe",
+
+  mixed:
+    "house bicycle umbrella rainbow guitar castle bridge " +
+    "airplane computer keyboard window mountain forest river " +
+    "beach camera backpack pencil scissors robot spaceship " +
+    "clock flower cloud treasure crown dinosaur balloon " +
+    "snowman train car boat kite sun moon star book phone"
+};
+
+function gameWords(topic) {
+  const source = topic === "mixed"
+    ? Object.values(WORDS).join(" ")
+    : WORDS[topic] || WORDS.mixed;
+
+  return [...new Set(
+    source.split(/\s+/).filter(w => w.length >= 3)
+  )];
+}
+
+// GAME STATE
+let uid = "";
+let room = "";
+let seat = -1;
+let host = false;
+let data = null;
+let unsubscribe = null;
+let serverOffset = 0;
+let activeRound = 0;
+let renderSignature = "";
+let drawing = false;
+let currentStroke = null;
+let strokeId = "";
+let brushSize = 6;
+let eraser = false;
+let starting = false;
+let ending = false;
+
+const canvas = $("board");
+const ctx = canvas.getContext("2d");
+
+function status(e) {
+  $("status").textContent = e?.message || String(e);
+}
+
+function roomRef() {
+  return ref(db, "drawGuessRooms/" + room);
+}
+
+function playerName() {
+  return $("nickname").value.trim().slice(0, 18) || "Player";
+}
+
+function makeCode() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  return Array.from(
+    { length: 6 },
+    () => chars[Math.floor(Math.random() * chars.length)]
+  ).join("");
+}
+
+function playersOf(d) {
+  return Object.entries(d?.players || {})
+    .filter(([i, p]) => p && p.uid)
+    .sort((a, b) => Number(a[0]) - Number(b[0]));
+}
+
+function isDrawer(d) {
+  return d?.status === "playing" &&
+    Number(d.drawer) === seat;
+}
+
+function roundCount(d) {
+  return playersOf(d).length * Number(d.settings?.rounds || 2);
+}
+
+function normalize(text) {
+  return String(text).toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+// ROOM INTERFACE
+function ui(d) {
+  data = d;
+  if (!d) return;
+
+  const players = playersOf(d);
+  const waiting = d.status === "waiting";
+
+  $("roomTag").textContent = room;
+  $("roomCode").textContent = room;
+  $("joinActions").classList.add("hidden");
+  $("roomDetails").classList.remove("hidden");
+  $("lobby").classList.toggle("hidden", !waiting);
+  $("gameScreen").classList.toggle("hidden", waiting);
+
+  $("waitingPlayers").textContent =
+    players.map(([i, p]) =>
+      p.name + (Number(i) === seat ? " (You)" : "")
+    ).join(" · ") + ` (${players.length}/4)`;
+
+  $("topic").value = d.settings?.topic || "mixed";
+  $("duration").value = String(d.settings?.duration || 60);
+  $("rounds").value = String(d.settings?.rounds || 2);
+
+  for (const id of ["topic", "duration", "rounds"]) {
+    $(id).disabled = !host || !waiting;
+  }
+
+  $("hostNote").textContent = host
+    ? "Only the host can change settings."
+    : "Waiting for the host to start.";
+
+  $("start").classList.toggle("hidden", !host);
+  $("start").disabled = !host || players.length < 2 || starting;
+
+  $("roundTag").textContent = d.round
+    ? `${d.round}/${roundCount(d)}`
+    : "—";
+
+  $("scoreboard").replaceChildren();
+
+  for (const [i, p] of players) {
+    const row = document.createElement("div");
+    row.className = "playerrow";
+
+    const name = document.createElement("span");
+    name.textContent =
+      (Number(i) === Number(d.drawer) ? "✎ " : "") +
+      p.name +
+      (Number(i) === seat ? " (You)" : "") +
+      (d.solved?.[i] ? " ✓" : "");
+
+    const points = document.createElement("b");
+    points.textContent = (p.score || 0) + " pts";
+
+    row.append(name, points);
+    $("scoreboard").append(row);
+  }
+
+  if (d.status === "playing") {
+    const artist = isDrawer(d);
+
+    $("turnTitle").textContent = artist
+      ? "Your turn to draw!"
+      : `${d.players[d.drawer].name} is drawing`;
+
+    $("turnInfo").textContent = artist
+      ? "Draw: " + d.secret
+      : "Guess the hidden word!";
+
+    $("hint").textContent = artist
+      ? d.secret.toUpperCase()
+      : d.secret.replace(/[a-z]/gi, "_").split("").join(" ");
+
+    $("tools").classList.toggle("hidden", !artist);
+
+    $("canvasNote").textContent = artist
+      ? "Draw the word without writing the answer."
+      : "Watch the drawing and guess.";
+
+    $("winner").textContent = "";
+    $("next").classList.add("hidden");
+    $("replay").classList.add("hidden");
+
+    $("guess").disabled = artist || !!d.solved?.[seat];
+    $("send").disabled = $("guess").disabled;
+
+    $("guessNote").textContent = d.solved?.[seat]
+      ? "Correct! Wait for the next round."
+      : artist ? "You are drawing." : "Type your guess.";
+
+    if (activeRound !== d.round) {
+      activeRound = d.round;
+      renderSignature = "";
+      $("guess").value = "";
+
+      if (!$("guess").disabled) $("guess").focus();
+    }
+
+  } else if (d.status === "between") {
+    $("turnTitle").textContent = "Round Complete";
+    $("turnInfo").textContent = "The word was: " + d.lastWord;
+    $("hint").textContent = (d.lastWord || "").toUpperCase();
+    $("tools").classList.add("hidden");
+    $("next").classList.toggle("hidden", !host);
+    $("replay").classList.add("hidden");
+    $("guess").disabled = true;
+    $("send").disabled = true;
+
+  } else if (d.status === "finished") {
+    $("turnTitle").textContent = "Game Over!";
+    $("turnInfo").textContent = "Final scores";
+    $("tools").classList.add("hidden");
+    $("next").classList.add("hidden");
+    $("replay").classList.toggle("hidden", !host);
+    $("guess").disabled = true;
+    $("send").disabled = true;
+
+    const best = Math.max(...players.map(([i, p]) => p.score || 0));
+    const winners = players
+      .filter(([i, p]) => (p.score || 0) === best)
+      .map(([i, p]) => p.name);
+
+    $("winner").textContent = winners.length > 1
+      ? "Draw: " + winners.join(" & ")
+      : winners[0] + " wins!";
+  }
+
+  renderCanvas(d);
+  renderFeed(d);
+  updateClock();
+}
+
+// TIMER
+function updateClock() {
+  if (!data || data.status !== "playing") {
+    $("timer").textContent = "0";
+    return;
+  }
+
+  const remaining = Math.max(
+    0,
+    Math.ceil((data.endsAt - Date.now() - serverOffset) / 1000)
+  );
+
+  $("timer").textContent = remaining;
+
+  if (remaining === 0 && host && !ending) {
+    endRound().catch(status);
+  }
+}
+
+// CHAT
+function renderFeed(d) {
+  const messages = Object.values(d.messages || {})
+    .sort((a, b) => (a.at || 0) - (b.at || 0))
+    .slice(-60);
+
+  const feed = $("feed");
+  feed.replaceChildren();
+
+  for (const m of messages) {
+    const el = document.createElement("div");
+    el.className = "message " + (m.kind || "");
+
+    el.textContent = m.kind === "correct"
+      ? m.name + " guessed correctly!"
+      : `${m.name}: ${m.text}`;
+
+    feed.appendChild(el);
+  }
+
+  feed.scrollTop = feed.scrollHeight;
+}
+
+// CANVAS
+function blank() {
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, 800, 600);
+}
+
+function drawStroke(s) {
+  const points = s?.points;
+  if (!Array.isArray(points) || !points.length) return;
+
+  ctx.save();
+  ctx.strokeStyle = s.color || "#000000";
+  ctx.lineWidth = Number(s.size) || 6;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  ctx.moveTo(points[0][0], points[0][1]);
+
+  if (points.length === 1) {
+    ctx.lineTo(points[0][0] + .01, points[0][1] + .01);
+  } else {
+    for (const p of points.slice(1)) {
+      ctx.lineTo(p[0], p[1]);
+    }
+  }
+
+  ctx.stroke();
+  ctx.restore();
+}
+
+function renderCanvas(d) {
+  const strokes = d.strokes || {};
+  const keys = Object.keys(strokes).sort();
+
+  const signature = d.round + "|" + keys.map(k =>
+    k + ":" + (strokes[k]?.points?.length || 0)
+  ).join(",");
+
+  if (signature === renderSignature) return;
+  renderSignature = signature;
+
+  blank();
+
+  for (const k of keys) drawStroke(strokes[k]);
+  if (drawing && currentStroke) drawStroke(currentStroke);
+}
+
+function point(e) {
+  const r = canvas.getBoundingClientRect();
+
+  return [
+    Math.max(0, Math.min(800,
+      Math.round((e.clientX - r.left) * 800 / r.width))),
+    Math.max(0, Math.min(600,
+      Math.round((e.clientY - r.top) * 600 / r.height)))
+  ];
+}
+
+let lastSend = 0;
+
+function sendStroke() {
+  if (!strokeId || !currentStroke || !isDrawer(data)) return;
+
+  set(
+    ref(db, `drawGuessRooms/${room}/strokes/${strokeId}`),
+    {
+      color: currentStroke.color,
+      size: currentStroke.size,
+      points: currentStroke.points.slice()
+    }
+  ).catch(status);
+}
+
+canvas.addEventListener("pointerdown", e => {
+  if (!isDrawer(data)) return;
+
+  e.preventDefault();
+  drawing = true;
+  canvas.setPointerCapture(e.pointerId);
+
+  strokeId = push(
+    ref(db, `drawGuessRooms/${room}/strokes`)
+  ).key;
+
+  currentStroke = {
+    color: eraser ? "#ffffff" : "#000000",
+    size: eraser ? brushSize * 2 : brushSize,
+    points: [point(e)]
+  };
+
+  drawStroke(currentStroke);
+  sendStroke();
+});
+
+canvas.addEventListener("pointermove", e => {
+  if (!drawing || !currentStroke) return;
+
+  e.preventDefault();
+
+  const p = point(e);
+  const points = currentStroke.points;
+  const prev = points[points.length - 1];
+
+  if (Math.hypot(p[0] - prev[0], p[1] - prev[1]) < 2) return;
+
+  points.push(p);
+
+  ctx.save();
+  ctx.strokeStyle = currentStroke.color;
+  ctx.lineWidth = currentStroke.size;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(...prev);
+  ctx.lineTo(...p);
+  ctx.stroke();
+  ctx.restore();
+
+  if (Date.now() - lastSend > 90) {
+    lastSend = Date.now();
+    sendStroke();
+  }
+});
+
+function finishStroke() {
+  if (!drawing) return;
+
+  sendStroke();
+  drawing = false;
+  currentStroke = null;
+  strokeId = "";
+}
+
+canvas.addEventListener("pointerup", finishStroke);
+canvas.addEventListener("pointercancel", finishStroke);
+
+// DRAWING TOOLS
+const colorButton = document.createElement("button");
+colorButton.className = "swatch selected";
+colorButton.style.background = "#000000";
+colorButton.title = "Black pen";
+colorButton.onclick = () => {
+  eraser = false;
+  $("eraser").textContent = "Eraser";
+};
+
+$("colors").appendChild(colorButton);
+
+$("brush").oninput = () => {
+  brushSize = Number($("brush").value);
+};
+
+$("eraser").onclick = () => {
+  eraser = !eraser;
+  $("eraser").textContent = eraser ? "Eraser ✓" : "Eraser";
+};
+
+$("clear").onclick = async () => {
+  if (!isDrawer(data)) return;
+  await set(ref(db, `drawGuessRooms/${room}/strokes`), null);
+};
+
+$("undo").onclick = async () => {
+  if (!isDrawer(data)) return;
+
+  const keys = Object.keys(data.strokes || {}).sort();
+  if (!keys.length) return;
+
+  await set(
+    ref(db, `drawGuessRooms/${room}/strokes/${keys[keys.length - 1]}`),
+    null
+  );
+};
+
+// FIREBASE ROOM
+function watch() {
+  if (unsubscribe) unsubscribe();
+
+  unsubscribe = onValue(roomRef(), snap => {
+    if (!snap.exists()) {
+      status("Room no longer exists.");
+      return;
+    }
+
+    ui(snap.val());
+  }, status);
+}
+
+async function createRoom() {
+  try {
+    if (!uid) throw Error("Still signing in.");
+
+    $("status").textContent = "Creating room...";
+
+    for (let i = 0; i < 8; i++) {
+      const code = makeCode();
+
+      const result = await runTransaction(
+        ref(db, `drawGuessRooms/${code}`),
+        current => current === null ? {
+          host: uid,
+          status: "waiting",
+          round: 0,
+          settings: {
+            topic: "mixed",
+            duration: 60,
+            rounds: 2
+          },
+          players: {
+            0: {
+              uid,
+              name: playerName(),
+              score: 0
+            }
+          },
+          createdAt: Date.now()
+        } : undefined,
+        { applyLocally: false }
+      );
+
+      if (result.committed) {
+        room = code;
+        seat = 0;
+        host = true;
+        $("status").textContent = "";
+        watch();
+        return;
+      }
+    }
+
+    throw Error("Unable to create room.");
+  } catch (e) {
+    status(e);
+  }
+}
+
+async function joinRoom() {
+  try {
+    if (!uid) throw Error("Still signing in.");
+
+    const code = $("code").value.trim().toUpperCase();
+
+    if (!/^[A-HJ-NP-Z2-9]{6}$/.test(code)) {
+      throw Error("Enter a valid room code.");
+    }
+
+    $("status").textContent = "Joining room...";
+
+    const r = ref(db, `drawGuessRooms/${code}`);
+    const check = await get(r);
+
+    if (!check.exists()) throw Error("Room not found.");
+
+    let chosen = -1;
+
+    const result = await runTransaction(r, d => {
+      if (d === null) return d;
+      if (d.status !== "waiting") return;
+
+      const existing = Object.entries(d.players || {})
+        .find(([i, p]) => p.uid === uid);
+
+      if (existing) {
+        chosen = Number(existing[0]);
+        return d;
+      }
+
+      for (let i = 0; i < 4; i++) {
+        if (!d.players?.[i]) {
+          chosen = i;
+          d.players = d.players || {};
+          d.players[i] = {
+            uid,
+            name: playerName(),
+            score: 0
+          };
+          return d;
+        }
+      }
+    }, { applyLocally: false });
+
+    if (!result.committed || chosen < 0) {
+      throw Error("Room is full or already started.");
+    }
+
+    room = code;
+    seat = chosen;
+    host = result.snapshot.val().host === uid;
+    $("status").textContent = "";
+
+    watch();
+  } catch (e) {
+    status(e);
+  }
+}
+
+// SETTINGS
+async function saveSettings() {
+  if (!host || data?.status !== "waiting") return;
+
+  await update(
+    ref(db, `drawGuessRooms/${room}/settings`),
+    {
+      topic: $("topic").value,
+      duration: Number($("duration").value),
+      rounds: Number($("rounds").value)
+    }
+  ).catch(status);
+}
+
+for (const id of ["topic", "duration", "rounds"]) {
+  $(id).addEventListener("change", saveSettings);
+}
+
+function pickWord(d) {
+  const list = gameWords(d.settings?.topic || "mixed");
+  const used = d.usedWords || {};
+  const available = list.filter(w => !used[w]);
+  const pool = available.length ? available : list;
+
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+// START GAME
+async function startGame() {
+  if (starting) return;
+  starting = true;
+  $("start").disabled = true;
+
+  try {
+    const result = await runTransaction(roomRef(), d => {
+      if (
+        !d ||
+        d.host !== uid ||
+        !["waiting", "finished"].includes(d.status) ||
+        playersOf(d).length < 2
+      ) return;
+
+      d.status = "playing";
+      d.round = 1;
+      d.drawer = Number(playersOf(d)[0][0]);
+      d.secret = pickWord(d);
+      d.usedWords = { [d.secret]: true };
+      d.endsAt = Date.now() + d.settings.duration * 1000;
+      d.strokes = null;
+      d.messages = null;
+      d.solved = null;
+      d.lastWord = null;
+
+      for (const [i, p] of playersOf(d)) {
+        p.score = 0;
+      }
+
+      return d;
+    }, { applyLocally: false });
+
+    if (!result.committed) {
+      throw Error("Could not start game.");
+    }
+  } catch (e) {
+    status(e);
+  } finally {
+    starting = false;
+  }
+}
+
+// END ROUND
+async function endRound() {
+  if (!host || ending || data?.status !== "playing") return;
+
+  ending = true;
+
+  try {
+    await runTransaction(roomRef(), d => {
+      if (
+        !d ||
+        d.status !== "playing" ||
+        Date.now() < d.endsAt - 500
+      ) return;
+
+      d.lastWord = d.secret;
+      d.secret = null;
+
+      d.status = d.round >= roundCount(d)
+        ? "finished"
+        : "between";
+
+      return d;
+    }, { applyLocally: false });
+  } finally {
+    ending = false;
+  }
+}
+
+// NEXT ROUND
+async function nextRound() {
+  if (!host) return;
+
+  try {
+    await runTransaction(roomRef(), d => {
+      if (
+        !d ||
+        d.host !== uid ||
+        d.status !== "between"
+      ) return;
+
+      const players = playersOf(d);
+
+      d.round++;
+      d.drawer = Number(
+        players[(d.round - 1) % players.length][0]
+      );
+
+      d.secret = pickWord(d);
+      d.usedWords = d.usedWords || {};
+      d.usedWords[d.secret] = true;
+
+      d.endsAt = Date.now() + d.settings.duration * 1000;
+      d.status = "playing";
+      d.strokes = null;
+      d.messages = null;
+      d.solved = null;
+
+      return d;
+    }, { applyLocally: false });
+  } catch (e) {
+    status(e);
+  }
+}
+
+// GUESSING
+$("guessForm").addEventListener("submit", async e => {
+  e.preventDefault();
+
+  const raw = $("guess").value.trim().slice(0, 50);
+
+  if (
+    !raw ||
+    !data ||
+    data.status !== "playing" ||
+    isDrawer(data) ||
+    data.solved?.[seat]
+  ) return;
+
+  $("guess").value = "";
+
+  try {
+    const correct = normalize(raw) === normalize(data.secret);
+
+    const messageRef = push(
+      ref(db, `drawGuessRooms/${room}/messages`)
+    );
+
+    if (correct) {
+      await runTransaction(roomRef(), d => {
+        if (
+          !d ||
+          d.status !== "playing" ||
+          d.solved?.[seat] ||
+          Number(d.drawer) === seat ||
+          normalize(d.secret) !== normalize(raw)
+        ) return;
+
+        d.solved = d.solved || {};
+        d.solved[seat] = true;
+
+        const seconds = Math.max(
+          0,
+          Math.ceil((d.endsAt - Date.now()) / 1000)
+        );
+
+        const points = 50 + seconds;
+
+        d.players[seat].score =
+          (d.players[seat].score || 0) + points;
+
+        d.players[d.drawer].score =
+          (d.players[d.drawer].score || 0) + 25;
+
+        d.messages = d.messages || {};
+        d.messages[messageRef.key] = {
+          name: d.players[seat].name,
+          kind: "correct",
+          text: "Correct!",
+          at: Date.now()
+        };
+
+        return d;
+      }, { applyLocally: false });
+
+    } else {
+      await set(messageRef, {
+        name: data.players[seat].name,
+        kind: "guess",
+        text: raw,
+        at: Date.now()
+      });
+    }
+  } catch (e) {
+    status(e);
+  }
+});
+
+// BUTTONS
+$("create").onclick = createRoom;
+$("join").onclick = joinRoom;
+$("start").onclick = startGame;
+$("next").onclick = nextRound;
+$("replay").onclick = startGame;
+$("leave").onclick = () => location.reload();
+
+// INITIALIZATION
+blank();
+
+onValue(ref(db, ".info/serverTimeOffset"), snap => {
+  serverOffset = Number(snap.val()) || 0;
+});
+
+setInterval(updateClock, 250);
+
+try {
+  const credential = await signInAnonymously(auth);
+  uid = credential.user.uid;
+  $("status").textContent = "";
+} catch (e) {
+  status(e);
+  $("create").disabled = true;
+  $("join").disabled = true;
+}
+
+</script>
+</body>
+</html>
